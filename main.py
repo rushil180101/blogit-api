@@ -40,7 +40,3 @@ app.include_router(router=posts.router, prefix="/api/posts", tags=["posts"])
 @app.get("/api")
 async def home():
     return "Welcome to FastAPI based Blog API management system"
-
-
-# Start from Part 10 - Authentication (33:00)
-# System Design - Video 3
