@@ -5,13 +5,7 @@ from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from auth import (
-    create_access_token,
-    hash_password,
-    oauth2_scheme,
-    verify_access_token,
-    verify_password,
-)
+from auth import CurrentUser, create_access_token, hash_password, verify_password
 from database import get_db
 from models import User
 from schemas import Token, UserCreate, UserPrivate, UserPublic, UserUpdate
@@ -21,8 +15,6 @@ router = APIRouter()
 # Create a oauth2 password request form dependency
 OAuth2FormDependency = Annotated[OAuth2PasswordRequestForm, Depends()]
 
-# Create a "bearer token extractor from header" dependency
-OAuth2TokenDependency = Annotated[str, Depends(oauth2_scheme)]
 
 # Create a session dependency typehint
 DbSessionDependency = Annotated[AsyncSession, Depends(get_db)]
@@ -57,27 +49,8 @@ async def get_access_token(form_data: OAuth2FormDependency, db: DbSessionDepende
     response_model=UserPrivate,
     status_code=status.HTTP_200_OK,
 )
-async def get_current_user(token: OAuth2TokenDependency, db: DbSessionDependency):
-    user_id = verify_access_token(token=token)
-    try:
-        user_id = int(user_id)
-    except Exception:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired token",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-
-    result = await db.execute(select(User).where(User.id == user_id))
-    existing_user = result.scalars().first()
-    if not existing_user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired token",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-
-    return existing_user
+async def get_current_user(current_user: CurrentUser):
+    return current_user
 
 
 @router.post(
@@ -155,7 +128,16 @@ async def get_user(user_id: int, db: DbSessionDependency):
     response_model=UserPrivate,
     status_code=status.HTTP_200_OK,
 )
-async def update_user_partial(user_id: int, user: UserUpdate, db: DbSessionDependency):
+async def update_user_partial(
+    user_id: int, user: UserUpdate, current_user: CurrentUser, db: DbSessionDependency
+):
+
+    if user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="not authorized to update the user",
+        )
+
     result = await db.execute(select(User).where(User.id == user_id))
     existing_user = result.scalars().first()
     if not existing_user:
@@ -195,7 +177,14 @@ async def update_user_partial(user_id: int, user: UserUpdate, db: DbSessionDepen
     "/{user_id}",
     status_code=status.HTTP_204_NO_CONTENT,
 )
-async def delete_user(user_id: int, db: DbSessionDependency):
+async def delete_user(user_id: int, current_user: CurrentUser, db: DbSessionDependency):
+
+    if user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="not authorized to delete the user",
+        )
+
     result = await db.execute(select(User).where(User.id == user_id))
     existing_user = result.scalars().first()
     if not existing_user:

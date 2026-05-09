@@ -5,6 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from auth import CurrentUser
 from database import get_db
 from models import Post, User
 from schemas import PostCreate, PostResponse, PostUpdate
@@ -21,19 +22,13 @@ DbSessionDependency = Annotated[AsyncSession, Depends(get_db)]
     response_model=PostResponse,
     status_code=status.HTTP_201_CREATED,
 )
-async def create_post(post: PostCreate, db: DbSessionDependency):
-    result = await db.execute(select(User).where(User.id == post.user_id))
-    existing_user = result.scalars().first()
-    if not existing_user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="user not found",
-        )
-
+async def create_post(
+    post: PostCreate, current_user: CurrentUser, db: DbSessionDependency
+):
     new_post = Post(
         title=post.title,
         content=post.content,
-        user_id=post.user_id,
+        user_id=current_user.id,
     )
     db.add(new_post)
     await db.commit()
@@ -111,7 +106,9 @@ async def get_posts_by_user(user_id: int, db: DbSessionDependency):
     response_model=PostResponse,
     status_code=status.HTTP_200_OK,
 )
-async def update_post_full(post_id: int, post: PostCreate, db: DbSessionDependency):
+async def update_post_full(
+    post_id: int, post: PostCreate, current_user: CurrentUser, db: DbSessionDependency
+):
     result = await db.execute(select(Post).where(Post.id == post_id))
     existing_post = result.scalars().first()
     if not existing_post:
@@ -121,16 +118,15 @@ async def update_post_full(post_id: int, post: PostCreate, db: DbSessionDependen
         )
 
     existing_user_id = existing_post.user_id
-    user_id_in_request = post.user_id
+    user_id_in_request = current_user.id
     if existing_user_id != user_id_in_request:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="cannot change user id while upating a post",
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="not authorized to update this post",
         )
 
     existing_post.title = post.title
     existing_post.content = post.content
-    existing_post.user_id = post.user_id
 
     await db.commit()
     await db.refresh(existing_post, attribute_names=["author"])
@@ -142,13 +138,23 @@ async def update_post_full(post_id: int, post: PostCreate, db: DbSessionDependen
     response_model=PostResponse,
     status_code=status.HTTP_200_OK,
 )
-async def update_post_partial(post_id: int, post: PostUpdate, db: DbSessionDependency):
+async def update_post_partial(
+    post_id: int, post: PostUpdate, current_user: CurrentUser, db: DbSessionDependency
+):
     result = await db.execute(select(Post).where(Post.id == post_id))
     existing_post = result.scalars().first()
     if not existing_post:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="post not found",
+        )
+
+    existing_user_id = existing_post.user_id
+    user_id_in_request = current_user.id
+    if existing_user_id != user_id_in_request:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="not authorized to update this post",
         )
 
     updated_post = post.model_dump(
@@ -166,13 +172,23 @@ async def update_post_partial(post_id: int, post: PostUpdate, db: DbSessionDepen
     "/{post_id}",
     status_code=status.HTTP_204_NO_CONTENT,
 )
-async def delete_post_by_id(post_id: int, db: DbSessionDependency):
+async def delete_post_by_id(
+    post_id: int, current_user: CurrentUser, db: DbSessionDependency
+):
     result = await db.execute(select(Post).where(Post.id == post_id))
     existing_post = result.scalars().first()
     if not existing_post:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="post not found",
+        )
+
+    existing_user_id = existing_post.user_id
+    user_id_in_request = current_user.id
+    if existing_user_id != user_id_in_request:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="not authorized to delete this post",
         )
 
     await db.delete(existing_post)

@@ -1,15 +1,26 @@
 from datetime import UTC, datetime, timedelta
-from typing import Optional
+from typing import Annotated, Optional
 
 import jwt
+from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from pwdlib import PasswordHash
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import settings
+from database import get_db
+from models import User
 
 password_hasher = PasswordHash.recommended()
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/users/token")
+
+# Create a "bearer token extractor from header" dependency
+OAuth2TokenDependency = Annotated[str, Depends(oauth2_scheme)]
+
+# Create a session dependency typehint
+DbSessionDependency = Annotated[AsyncSession, Depends(get_db)]
 
 
 def hash_password(password: str) -> str:
@@ -58,3 +69,31 @@ def verify_access_token(token: str) -> str | None:
     except jwt.InvalidTokenError:
         return None
     return payload.get("sub")
+
+
+async def get_current_user(
+    token: OAuth2TokenDependency, db: DbSessionDependency
+) -> User:
+    try:
+        user_id = int(verify_access_token(token))
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="invalid or expired token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    result = await db.execute(select(User).where(User.id == user_id))
+    existing_user = result.scalars().first()
+    if not existing_user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="invalid or expired token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    return existing_user
+
+
+# Create the current user dependency
+CurrentUser = Annotated[User, Depends(get_current_user)]
