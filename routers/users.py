@@ -1,14 +1,18 @@
 from typing import Annotated, List
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.concurrency import run_in_threadpool
+from PIL import UnidentifiedImageError
 
 from auth import CurrentUser, create_access_token, hash_password, verify_password
 from database import get_db
 from models import User
 from schemas import Token, UserCreate, UserPrivate, UserPublic, UserUpdate
+from image_utils import process_image, delete_image
+from config import settings
 
 router = APIRouter()
 
@@ -173,6 +177,62 @@ async def update_user_partial(
     return existing_user
 
 
+@router.patch(
+    "/{user_id}/profile_pic",
+    response_model=UserPrivate,
+    status_code=status.HTTP_200_OK,
+)
+async def update_user_profile_pic(
+    user_id: int,
+    file: UploadFile,  # multi-part form data utilities
+    current_user: CurrentUser,
+    db: DbSessionDependency,
+):
+    if current_user.id != user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="user is not allowed to perform profile pic update operation",
+        )
+
+    content = await file.read()
+    if len(content) > settings.max_profile_pic_image_size_bytes:
+        max_profile_pic_image_size_mb = settings.max_profile_pic_image_size_bytes // (
+            1024 * 1024
+        )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"file size is too large, maximum allowed size is {max_profile_pic_image_size_mb}MB",
+        )
+
+    try:
+        # Image processing is a CPU-bound task, hence, we run it in a
+        # separate thread pool, because, running it here directly will
+        # block the event loop and make the API response much slower
+        new_filename = await run_in_threadpool(process_image, content)
+    except UnidentifiedImageError as err:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="received invalid image file, please upload a valid image file (JPEG, PNG)",
+        )
+
+    old_filename = current_user.image_file
+
+    current_user.image_file = new_filename
+    await db.commit()
+    await db.refresh(current_user)
+
+    # We delete the old image after updating the user with new image because
+    # if we did vice versa, i.e., delete old image first and then update the
+    # new image, then if there is an error while updating new image, the user
+    # will be left with no profile pic image at all in our system. But in this
+    # case, we might get orphan image files on disk, but atleast user will have
+    # an associated profile pic image at any given point of time.
+    if old_filename:
+        delete_image(old_filename)
+
+    return current_user
+
+
 @router.delete(
     "/{user_id}",
     status_code=status.HTTP_204_NO_CONTENT,
@@ -193,5 +253,40 @@ async def delete_user(user_id: int, current_user: CurrentUser, db: DbSessionDepe
             detail="user not found",
         )
 
+    old_filename = existing_user.image_file
+
     await db.delete(existing_user)
     await db.commit()
+
+    if old_filename is not None:
+        delete_image(old_filename)
+
+
+@router.delete(
+    "/{user_id}/profile_pic",
+    response_model=UserPrivate,
+    status_code=status.HTTP_200_OK,
+)
+async def delete_user_profile_pic(
+    user_id: int,
+    current_user: CurrentUser,
+    db: DbSessionDependency,
+):
+    if current_user.id != user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="user is not allowed to perform profile pic delete operation",
+        )
+
+    old_filename = current_user.image_file
+    if not old_filename:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="profile pic does not exist",
+        )
+
+    current_user.image_file = None
+    await db.commit()
+    await db.refresh(current_user)
+    delete_image(old_filename)
+    return current_user

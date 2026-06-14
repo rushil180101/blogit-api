@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     secret_key: SecretStr
     algorithm: str = "HS256"
     access_token_expiration_timedelta_in_minutes: int = 30
+    max_profile_pic_image_size_bytes: int = 5 * 1024 * 1024  # 5 MB
 
 
 settings = Settings()  # Loads from .env file
