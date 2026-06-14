@@ -1,6 +1,7 @@
 from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from typing import List
 
 
 class UserBase(BaseModel):
@@ -54,3 +55,11 @@ class PostResponse(PostBase):
     user_id: int
     date_posted: datetime
     author: UserPublic
+
+
+class PaginatedPostsResponse(BaseModel):
+    posts: List[PostResponse]
+    total: int
+    skip: int
+    limit: int
+    has_more: bool

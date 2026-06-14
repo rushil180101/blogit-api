@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     algorithm: str = "HS256"
     access_token_expiration_timedelta_in_minutes: int = 30
     max_profile_pic_image_size_bytes: int = 5 * 1024 * 1024  # 5 MB
+    default_posts_per_page: int = 10
 
 
 settings = Settings()  # Loads from .env file

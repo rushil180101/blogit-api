@@ -1,14 +1,15 @@
 from typing import Annotated, List
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from auth import CurrentUser
 from database import get_db
 from models import Post, User
-from schemas import PostCreate, PostResponse, PostUpdate
+from schemas import PostCreate, PostResponse, PostUpdate, PaginatedPostsResponse
+from config import settings
 
 router = APIRouter()
 
@@ -40,23 +41,36 @@ async def create_post(
 
 @router.get(
     "",
-    response_model=List[PostResponse],
+    response_model=PaginatedPostsResponse,
     status_code=status.HTTP_200_OK,
 )
 async def get_posts(
     db: DbSessionDependency,
-    offset: int = 0,
-    limit: Annotated[int, Query(le=100)] = 100,
+    skip: Annotated[int, Query(ge=0)] = 0,
+    limit: Annotated[int, Query(ge=0, le=100)] = settings.default_posts_per_page,
 ):
+    count_result = await db.execute(select(func.count()).select_from(Post))
+    total = count_result.scalar() or 0
+
     result = await db.execute(
         select(Post)
         .options(selectinload(Post.author))
-        .offset(offset)
+        .offset(skip)
         .limit(limit)
         .order_by(Post.date_posted.desc())
     )
     posts = result.scalars().all()
-    return posts
+
+    paginated_posts_response = PaginatedPostsResponse(
+        # Since we are constructing the response manually, we
+        # need to explicitly validate the PostResponse model
+        posts=[PostResponse.model_validate(post) for post in posts],
+        total=total,
+        skip=skip,
+        limit=limit,
+        has_more=(skip + len(posts) < total),
+    )
+    return paginated_posts_response
 
 
 @router.get(
@@ -79,10 +93,15 @@ async def get_post_by_id(post_id: int, db: DbSessionDependency):
 
 @router.get(
     "/user/{user_id}",
-    response_model=List[PostResponse],
+    response_model=PaginatedPostsResponse,
     status_code=status.HTTP_200_OK,
 )
-async def get_posts_by_user(user_id: int, db: DbSessionDependency):
+async def get_posts_by_user(
+    user_id: int,
+    db: DbSessionDependency,
+    skip: Annotated[int, Query(ge=0)] = 0,
+    limit: Annotated[int, Query(ge=1, le=100)] = settings.default_posts_per_page,
+):
     result = await db.execute(select(User).where(User.id == user_id))
     existing_user = result.scalars().first()
     if not existing_user:
@@ -91,14 +110,26 @@ async def get_posts_by_user(user_id: int, db: DbSessionDependency):
             detail="user not found",
         )
 
+    total = len(existing_user.posts)
+
     result = await db.execute(
         select(Post)
         .options(selectinload(Post.author))
         .where(Post.user_id == user_id)
         .order_by(Post.date_posted.desc())
+        .offset(skip)
+        .limit(limit)
     )
     posts = result.scalars().all()
-    return posts
+
+    paginated_posts_response = PaginatedPostsResponse(
+        posts=[PostResponse.model_validate(post) for post in posts],
+        total=total,
+        skip=skip,
+        limit=limit,
+        has_more=(skip + len(posts) < total),
+    )
+    return paginated_posts_response
 
 
 @router.put(
