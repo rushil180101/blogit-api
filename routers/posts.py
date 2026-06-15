@@ -1,15 +1,15 @@
-from typing import Annotated, List
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select, func
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from auth import CurrentUser
+from config import settings
 from database import get_db
 from models import Post, User
-from schemas import PostCreate, PostResponse, PostUpdate, PaginatedPostsResponse
-from config import settings
+from schemas import PaginatedPostsResponse, PostCreate, PostResponse, PostUpdate
 
 router = APIRouter()
 

@@ -2,17 +2,17 @@ from typing import Annotated, List
 
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, status
 from fastapi.security import OAuth2PasswordRequestForm
+from PIL import UnidentifiedImageError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.concurrency import run_in_threadpool
-from PIL import UnidentifiedImageError
 
 from auth import CurrentUser, create_access_token, hash_password, verify_password
+from config import settings
 from database import get_db
+from image_utils import delete_image, process_image
 from models import User
 from schemas import Token, UserCreate, UserPrivate, UserPublic, UserUpdate
-from image_utils import process_image, delete_image
-from config import settings
 
 router = APIRouter()
 
@@ -196,12 +196,12 @@ async def update_user_profile_pic(
 
     content = await file.read()
     if len(content) > settings.max_profile_pic_image_size_bytes:
-        max_profile_pic_image_size_mb = settings.max_profile_pic_image_size_bytes // (
-            1024 * 1024
-        )
+        max_allowed_size_mb = settings.max_profile_pic_image_size_bytes // (1024 * 1024)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"file size is too large, maximum allowed size is {max_profile_pic_image_size_mb}MB",
+            detail=(
+                f"file is too large, maximum allowed size is {max_allowed_size_mb}MB"
+            ),
         )
 
     try:
@@ -209,10 +209,10 @@ async def update_user_profile_pic(
         # separate thread pool, because, running it here directly will
         # block the event loop and make the API response much slower
         new_filename = await run_in_threadpool(process_image, content)
-    except UnidentifiedImageError as err:
+    except UnidentifiedImageError:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="received invalid image file, please upload a valid image file (JPEG, PNG)",
+            detail="got invalid image file, please upload a valid image (JPEG, PNG)",
         )
 
     old_filename = current_user.image_file

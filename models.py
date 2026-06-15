@@ -28,7 +28,7 @@ class User(Base):
     def image_path(self):
         if self.image_file:
             return f"/media/profile_pics/{self.image_file}"
-        return f"/static/profile_pics/default.png"
+        return "/static/profile_pics/default.png"
 
 
 class Post(Base):
