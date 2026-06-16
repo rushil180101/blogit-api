@@ -23,6 +23,10 @@ class User(Base):
     posts: Mapped[List[Post]] = relationship(
         back_populates="author", cascade="all, delete-orphan"
     )
+    reset_token: Mapped[PasswordResetToken] = relationship(
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
 
     @property
     def image_path(self):
@@ -46,3 +50,26 @@ class Post(Base):
         index=True,
     )
     author: Mapped[User] = relationship(back_populates="posts")
+
+
+# The reason why we create dedicated model/table for password reset token
+# instead of using it like jwt tokens is because with database storage,
+# we can achieve true single-use behavior by deleting the tokens from
+# database once they are used (this will invalidate all tokens and keep
+# only either 0 or 1 token(s) in the database per user). In jwt tokens,
+# a single token can be used multiple times until it is alive, which we
+# don't want with reset tokens.
+class PasswordResetToken(Base):
+    __tablename__ = "password_reset_tokens"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), unique=True, nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC)
+    )
+    expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    user: Mapped[User] = relationship(back_populates="reset_token")
