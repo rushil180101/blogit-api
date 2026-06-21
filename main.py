@@ -4,20 +4,11 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 from database import engine
-from models import Base
 from routers import posts, users
-
-# Create an async lifespan for FastAPI app
-# - Before initializing the FastAPI app, load the async db tables
-# - Pass over the control to FastAPI app (yield)
-# - Close the async db connections properly
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    # Startup
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
 
     # Pass control over to FastAPI app
     yield

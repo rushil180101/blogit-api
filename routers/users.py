@@ -148,7 +148,7 @@ async def reset_password(request_data: ResetPasswordRequest, db: DbSessionDepend
 
     # Validate expiry
     curr_datetime = datetime.now(UTC)
-    if curr_datetime >= password_reset_token_entry.expires_at.replace(tzinfo=UTC):
+    if curr_datetime >= password_reset_token_entry.expires_at:
         await db.delete(password_reset_token_entry)
         await db.commit()
         raise HTTPException(
