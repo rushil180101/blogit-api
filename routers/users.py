@@ -1,6 +1,7 @@
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, List
 
+from botocore.exceptions import ClientError
 from fastapi import (
     APIRouter,
     BackgroundTasks,
@@ -28,7 +29,7 @@ from auth import (
 from config import settings
 from database import get_db
 from email_utils import send_password_reset_email
-from image_utils import delete_image, process_image
+from image_utils import delete_profile_image, process_image, upload_profile_image
 from models import PasswordResetToken, User
 from schemas import (
     ChangePasswordRequest,
@@ -357,11 +358,21 @@ async def update_user_profile_pic(
         # Image processing is a CPU-bound task, hence, we run it in a
         # separate thread pool, because, running it here directly will
         # block the event loop and make the API response much slower
-        new_filename = await run_in_threadpool(process_image, content)
+        processed_bytes, new_filename = await run_in_threadpool(process_image, content)
     except UnidentifiedImageError:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="got invalid image file, please upload a valid image (JPEG, PNG)",
+        )
+
+    try:
+        # Uploading to s3 via normal boto3 library is a
+        # blocking call. Hence, it will be run in a threadpool.
+        await upload_profile_image(file_bytes=processed_bytes, filename=new_filename)
+    except ClientError:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="failed to upload image",
         )
 
     old_filename = current_user.image_file
@@ -377,7 +388,7 @@ async def update_user_profile_pic(
     # case, we might get orphan image files on disk, but atleast user will have
     # an associated profile pic image at any given point of time.
     if old_filename:
-        delete_image(old_filename)
+        await delete_profile_image(filename=old_filename)
 
     return current_user
 
@@ -408,7 +419,7 @@ async def delete_user(user_id: int, current_user: CurrentUser, db: DbSessionDepe
     await db.commit()
 
     if old_filename is not None:
-        delete_image(old_filename)
+        await delete_profile_image(filename=old_filename)
 
 
 @router.delete(
@@ -437,5 +448,5 @@ async def delete_user_profile_pic(
     current_user.image_file = None
     await db.commit()
     await db.refresh(current_user)
-    delete_image(old_filename)
+    await delete_profile_image(old_filename)
     return current_user

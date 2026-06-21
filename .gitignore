@@ -227,3 +227,5 @@ tracker.txt
 
 populate_db.py
 populate_images/
+
+check_s3_operations.py

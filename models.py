@@ -6,6 +6,8 @@ from typing import List
 from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
+from config import settings
+
 
 class Base(DeclarativeBase):
     pass
@@ -31,7 +33,13 @@ class User(Base):
     @property
     def image_path(self):
         if self.image_file:
-            return f"/media/profile_pics/{self.image_file}"
+            path_format = "https://{bkt}.s3.{region}.amazonaws.com/profile_pics/{img}"
+            s3_path = path_format.format(
+                bkt=settings.s3_bucket_name,
+                region=settings.s3_region,
+                img=self.image_file,
+            )
+            return s3_path
         return "/static/profile_pics/default.png"
 
 
