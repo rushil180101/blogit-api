@@ -86,7 +86,7 @@ async def get_current_user(current_user: CurrentUser):
 
 
 @router.post(
-    "/forgot-password",
+    "/forgot_password",
     status_code=status.HTTP_202_ACCEPTED,
 )
 async def forgot_password(
@@ -131,7 +131,7 @@ async def forgot_password(
 
 
 @router.post(
-    "/reset-password",
+    "/reset_password",
     status_code=status.HTTP_200_OK,
 )
 async def reset_password(request_data: ResetPasswordRequest, db: DbSessionDependency):
@@ -179,7 +179,7 @@ async def reset_password(request_data: ResetPasswordRequest, db: DbSessionDepend
 
 
 @router.patch(
-    "/change-password",
+    "/change_password",
     status_code=status.HTTP_200_OK,
 )
 async def change_password(
