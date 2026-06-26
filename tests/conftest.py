@@ -10,7 +10,7 @@ TEST_AWS_REGION = "us-east-1"
 # actual settings (.env).
 
 os.environ["SECRET_KEY"] = "test-secret-key"
-os.environ["DATABASE_URL"] = (
+os.environ["POOLED_DATABASE_URL"] = (
     "postgresql+psycopg://bloguser:blogpass@localhost/test_blog"
 )
 os.environ["S3_BUCKET_NAME"] = "test-bucket"
@@ -47,7 +47,7 @@ def anyio_backend():
 @pytest.fixture(scope="session")
 def test_engine():
     engine = create_async_engine(
-        url=os.environ["DATABASE_URL"],
+        url=os.environ["POOLED_DATABASE_URL"],
         poolclass=NullPool,
         # NullPool disables connection pooling entirely,
         # because without it, multiple tests can cause

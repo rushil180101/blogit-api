@@ -11,7 +11,8 @@ class Settings(BaseSettings):
     )
 
     # Database handling
-    database_url: str
+    migration_database_url: str
+    pooled_database_url: str
 
     secret_key: SecretStr
     algorithm: str = "HS256"
